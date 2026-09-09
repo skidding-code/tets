@@ -1,0 +1,41 @@
+name: CoreProtect Folia 26.2 Build
+
+on:
+  push:
+    branches:
+      - coreprotect-folia-26-2-build
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+      - name: Build candidate
+        run: |
+          git clone https://github.com/PlayPro/CoreProtect.git coreprotect
+          cd coreprotect
+          git checkout 36b30bc5f3f9f14c322c0feac2ad972e0d9d90d2
+          base64 -d ../coreprotect-folia-build/prod-port.patch.gz.b64 | gzip -d > /tmp/coreprotect.patch
+          git apply --check /tmp/coreprotect.patch
+          git apply /tmp/coreprotect.patch
+          git apply --check ../coreprotect-folia-build/shutdown-safety.patch
+          git apply ../coreprotect-folia-build/shutdown-safety.patch
+          mvn -B verify
+      - name: Verify artifact
+        run: |
+          test -n "$(find coreprotect/target -maxdepth 1 -type f -name 'CoreProtect-*.jar' -print -quit)"
+          unzip -p "$(find coreprotect/target -maxdepth 1 -type f -name 'CoreProtect-*.jar' -print -quit)" plugin.yml | grep -F 'folia-supported: true'
+      - uses: actions/upload-artifact@v7
+        with:
+          name: coreprotect-folia-26.2
+          path: coreprotect/target/CoreProtect-*.jar
+          if-no-files-found: error
