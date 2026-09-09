@@ -28,6 +28,8 @@ jobs:
           git apply /tmp/coreprotect.patch
           git apply --check ../coreprotect-folia-build/shutdown-safety.patch
           git apply ../coreprotect-folia-build/shutdown-safety.patch
+          sed -i 's|<project.branch></project.branch>|<project.branch>development</project.branch>|' pom.xml
+          grep -F '<project.branch>development</project.branch>' pom.xml
           mvn -B verify
       - name: Verify artifact
         run: |
