@@ -31,10 +31,75 @@ jobs:
           mvn -B verify
       - name: Verify artifact
         run: |
-          test -n "$(find coreprotect/target -maxdepth 1 -type f -name 'CoreProtect-*.jar' -print -quit)"
-          unzip -p "$(find coreprotect/target -maxdepth 1 -type f -name 'CoreProtect-*.jar' -print -quit)" plugin.yml | grep -F 'folia-supported: true'
+          JAR="$(find coreprotect/target -maxdepth 1 -type f -name 'CoreProtect-*.jar' -print -quit)"
+          test -n "$JAR"
+          unzip -p "$JAR" plugin.yml | grep -F 'folia-supported: true'
+          echo "COREPROTECT_JAR=$JAR" >> "$GITHUB_ENV"
+      - name: Live Folia 26.2 smoke test
+        run: |
+          set -euo pipefail
+          USER_AGENT='coreprotect-folia-port-test/1.0 (https://github.com/skidding-code/tets)'
+          BUILD_JSON="$(curl -fsSL -H "User-Agent: $USER_AGENT" https://fill.papermc.io/v3/projects/folia/versions/26.2/builds/latest)"
+          FOLIA_URL="$(printf '%s' "$BUILD_JSON" | jq -r '.downloads."server:default".url')"
+          FOLIA_SHA="$(printf '%s' "$BUILD_JSON" | jq -r '.downloads."server:default".checksums.sha256')"
+          test "$FOLIA_URL" != null
+          mkdir -p live-server/plugins
+          curl -fsSL -H "User-Agent: $USER_AGENT" -o live-server/folia.jar "$FOLIA_URL"
+          printf '%s  %s\n' "$FOLIA_SHA" live-server/folia.jar | sha256sum -c -
+          cp "$COREPROTECT_JAR" live-server/plugins/CoreProtect.jar
+          printf 'eula=true\n' > live-server/eula.txt
+          cat > live-server/server.properties <<'EOF'
+          online-mode=false
+          view-distance=2
+          simulation-distance=2
+          max-players=4
+          server-port=25571
+          enable-query=false
+          enable-rcon=false
+          spawn-protection=0
+          EOF
+          cd live-server
+          mkfifo console.in
+          tail -f console.in | java -Xms768M -Xmx1536M -jar folia.jar nogui > server.log 2>&1 &
+          SERVER_PID=$!
+          for i in $(seq 1 180); do
+            if grep -q 'Done (' server.log; then
+              break
+            fi
+            if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+              cat server.log
+              exit 1
+            fi
+            sleep 1
+          done
+          grep -q 'Done (' server.log
+          printf 'version CoreProtect\nco status\nstop\n' > console.in
+          for i in $(seq 1 60); do
+            if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          if kill -0 "$SERVER_PID" 2>/dev/null; then
+            kill "$SERVER_PID" || true
+            cat server.log
+            exit 1
+          fi
+          wait "$SERVER_PID"
+          cat server.log
+          grep -F 'CoreProtect has been successfully enabled!' server.log
+          grep -F 'CoreProtect version' server.log
+          if grep -E 'UnsupportedOperationException|Thread .* failed main thread check|TickThread|Could not pass event .*CoreProtect|Error occurred while enabling CoreProtect|Could not load.*CoreProtect' server.log; then
+            exit 1
+          fi
       - uses: actions/upload-artifact@v7
         with:
           name: coreprotect-folia-26.2
           path: coreprotect/target/CoreProtect-*.jar
           if-no-files-found: error
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: coreprotect-folia-26.2-live-log
+          path: live-server/server.log
+          if-no-files-found: ignore
