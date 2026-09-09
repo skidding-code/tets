@@ -1,0 +1,15 @@
+--- a/src/main/java/net/coreprotect/utility/FoliaTeleport.java
++++ b/src/main/java/net/coreprotect/utility/FoliaTeleport.java
+@@ -182,7 +182,11 @@
+                     return null;
+                 }
+                 try {
+-                    location.getBlock().setBlockData(original);
++                    Block block = location.getBlock();
++                    BlockData temporary = Material.DIRT.createBlockData();
++                    if (block.getBlockData().equals(temporary)) {
++                        block.setBlockData(original);
++                    }
+                 }
+                 finally {
+                     Teleport.revertBlocks.remove(location, original);
